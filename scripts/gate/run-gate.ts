@@ -38,8 +38,8 @@ export interface GateResult {
   warnings: string[];
 }
 
-const TEXT_CODE = /\.(qml|js|mjs)$/;
-const TEXT_ANY = /\.(json|md|txt|qml|js|mjs|svg)$|^(LICENSE|LICENCE|COPYING|NOTICE|qmldir)$/;
+const TEXT_CODE = /\.(qml|js|mjs)$/i; // case-insensitive: scanTree also lowercases extensions
+const TEXT_ANY = /\.(json|md|txt|qml|js|mjs|svg)$|^(LICENSE|LICENCE|COPYING|NOTICE|qmldir)$/i;
 const MAX_TEXT_FILES = 60;
 const MAX_TEXT_BYTES = 64 * 1024;
 
@@ -82,6 +82,7 @@ export async function runGate(file: string, raw: unknown, deps: GateDeps): Promi
   // G1/G2: listing shape, plain text, namespace, file name, reserved, retired, look-alikes.
   if (!validateListing(raw)) return (errors.push('listing does not match the schema'), done());
   const l = raw as unknown as Listing;
+  id = l.id;
   try {
     assertPlain(l, file);
     checkNamespace(l, (deps.namespaces ?? {}) as Record<string, string[]>);
@@ -208,7 +209,10 @@ export function report(results: GateResult[]): string {
   ];
   if (!results.length) lines.push('No listing files changed.');
   for (const r of results) {
-    lines.push(`### ${r.errors.length ? 'FAIL' : 'PASS'}: \`${r.id.replace(/`/g, '')}\``, '');
+    lines.push(
+      `### ${r.errors.length ? 'FAIL' : 'PASS'}: \`${r.id.replace(/[\r\n`]/g, ' ').slice(0, 100)}\``,
+      ''
+    );
     for (const e of r.errors.slice(0, 40))
       lines.push(`- error: ${e.replace(/[\r\n`]/g, ' ').slice(0, 300)}`);
     for (const e of r.warnings.slice(0, 20))

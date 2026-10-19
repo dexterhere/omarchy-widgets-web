@@ -226,6 +226,10 @@ describe('listing-level rules', () => {
     expect(report([r])).not.toContain('QQQQ');
     expect(report([r])).toMatch(/FAIL/);
   });
+  it('a hostile id never reaches the summary heading', async () => {
+    const r = await runGate('x.json', { id: 'a`\n# pwned' }, deps());
+    expect(report([r])).not.toMatch(/\n# pwned/);
+  });
   it('a bad listing never throws', async () => {
     const r = await runGate('x.json', { nope: 1 }, deps());
     expect(r.errors.length).toBe(1);

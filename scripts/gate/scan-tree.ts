@@ -60,7 +60,9 @@ export function scanTree(entries: TreeEntry[], opts: { entryPoints?: string[] } 
     lower.set(key, p);
     if (e.type !== 'blob') continue;
     const base = p.split('/').pop() ?? '';
-    const ext = base.includes('.') ? base.split('.').pop()!.toLowerCase() : '';
+    const rawExt = base.includes('.') ? base.split('.').pop()! : '';
+    if (rawExt !== rawExt.toLowerCase()) add(`${p}: file extensions must be lowercase`);
+    const ext = rawExt.toLowerCase();
     if (!(ext ? EXT_ALLOW.has(ext) : NAME_ALLOW.has(base)) && !NAME_ALLOW.has(base))
       add(`${p}: file type not allowed`);
     const size = e.size ?? 0;

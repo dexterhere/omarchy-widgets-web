@@ -19,7 +19,8 @@ describe('scanTree', () => {
     ['binary', f('run.so'), /not allowed/],
     ['shell script', f('install.sh'), /not allowed/],
     ['oversized', f('big.json', { size: 2_000_000 }), /over/],
-    ['case collision', f('Layout.json'), /only by case/]
+    ['case collision', f('Layout.json'), /only by case/],
+    ['uppercase extension', f('Run.QML'), /lowercase/]
   ])('rejects %s', (_n, extra, re) => {
     expect(scanTree([...ok, extra]).join()).toMatch(re);
   });
