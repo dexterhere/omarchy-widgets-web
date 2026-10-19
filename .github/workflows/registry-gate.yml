@@ -1,0 +1,35 @@
+name: registry-gate
+# Trusted scripts only: the checkout is the BASE commit. The PR head is fetched as git objects and
+# only registry/widgets/*.json is read from it as data. No secrets beyond the read-only GITHUB_TOKEN,
+# no pull_request_target, nothing from the PR is executed. Note: a pull_request run still uses the
+# workflow file from the PR merge ref, so changes to .github/ and scripts/ are guarded paths that a
+# maintainer must read (see docs/PLAN-contribution.md, R-2).
+on:
+  pull_request:
+    paths:
+      - 'registry/widgets/**'
+permissions:
+  contents: read
+concurrency:
+  group: registry-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: fetch the pull request head as data
+        run: git fetch --no-tags origin "refs/pull/${{ github.event.pull_request.number }}/head"
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - run: bun install --frozen-lockfile
+      - run: bun scripts/gate.ts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
