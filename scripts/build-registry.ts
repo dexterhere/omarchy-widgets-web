@@ -3,6 +3,7 @@
 // Usage: bun scripts/build-registry.ts [--offline] [--skip-reachability] [--out registry/dist]
 //        bun scripts/build-registry.ts --local --only <listing id>   (gates on a candidate, writes nothing)
 // --skip-reachability is for local development only; CI must never use it.
+import { createHash } from 'node:crypto';
 import {
   existsSync,
   lstatSync,
@@ -187,10 +188,12 @@ async function fetchBody(
   }
 }
 
-export async function fetchJson(
+/** Parsed JSON plus the sha256 (lowercase hex) of the exact bytes it was parsed from. The hash is
+ *  what `ow install` compares the fetched files against, so it must cover the raw bytes. */
+export async function fetchJsonHashed(
   rawUrl: string,
   opts: FetchOpts = {}
-): Promise<Record<string, unknown>> {
+): Promise<{ json: Record<string, unknown>; sha256: string }> {
   const buf = await fetchBody(rawUrl, opts);
   let parsed: unknown;
   try {
@@ -200,7 +203,15 @@ export async function fetchJson(
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed))
     throw new Error('rejected: JSON root must be an object');
-  return parsed as Record<string, unknown>;
+  const sha256 = createHash('sha256').update(buf).digest('hex');
+  return { json: parsed as Record<string, unknown>, sha256 };
+}
+
+export async function fetchJson(
+  rawUrl: string,
+  opts: FetchOpts = {}
+): Promise<Record<string, unknown>> {
+  return (await fetchJsonHashed(rawUrl, opts)).json;
 }
 
 /** A text file from the pinned commit (UTF-8 only), under exactly the rules of fetchJson. */
@@ -496,6 +507,7 @@ async function buildOne(l: Listing, inp: BuildInput): Promise<RegistryWidget> {
   let widget: Record<string, unknown>;
   let layoutRaw: unknown;
   let src: { owner: string; repo: string } | null = null;
+  let hashes: Record<string, string> | undefined; // real listings only; fixtures have no files
   const fixture = l.source === 'fixture';
   // Committer date (yyyy-mm-dd, UTC) of the pinned commit. Fixtures get a fixed date; null when
   // the reachability check was skipped or GitHub did not return one.
@@ -530,14 +542,25 @@ async function buildOne(l: Listing, inp: BuildInput): Promise<RegistryWidget> {
     }
     src = { owner, repo };
     const base = `https://${RAW_HOST}/${owner}/${repo}/${l.commit}`;
-    manifest = await fetchJson(`${base}/manifest.json`, { fetch: inp.fetch });
-    widget = await fetchJson(`${base}/widget.json`, { fetch: inp.fetch });
-    // Only spec widgets have a layout; code widgets are never fetched beyond these data files.
-    if (widget.tier === 'spec')
-      layoutRaw = await fetchJson(`${base}/layout.json`, {
-        fetch: inp.fetch,
-        maxBytes: LAYOUT_LIMITS.bytes
-      });
+    const m = await fetchJsonHashed(`${base}/manifest.json`, { fetch: inp.fetch });
+    const wj = await fetchJsonHashed(`${base}/widget.json`, { fetch: inp.fetch });
+    manifest = m.json;
+    widget = wj.json;
+    hashes = { 'manifest.json': m.sha256, 'widget.json': wj.sha256 };
+    // Spec widgets are validated against their layout. A code widget's layout.json is only hashed
+    // (never trusted): `ow install` fetches all three files, so it checks all three. If it cannot
+    // be read we publish no hashes at all, because `ow` rejects a partial hash set.
+    const lay = await fetchJsonHashed(`${base}/layout.json`, {
+      fetch: inp.fetch,
+      maxBytes: LAYOUT_LIMITS.bytes
+    }).catch((e) => {
+      if (widget.tier === 'spec') throw e;
+      return null;
+    });
+    if (lay) {
+      hashes['layout.json'] = lay.sha256;
+      if (widget.tier === 'spec') layoutRaw = lay.json;
+    } else hashes = undefined;
   }
   if (!validateManifest(manifest))
     throw new Error(`manifest.json invalid: ${errText(validateManifest)}`);
@@ -641,6 +664,7 @@ async function buildOne(l: Listing, inp: BuildInput): Promise<RegistryWidget> {
     license: manifest.license as string,
     repo: l.repo,
     commit: l.commit,
+    ...(hashes ? { sha256: hashes } : {}),
     updated,
     category: categories[0],
     categories,
