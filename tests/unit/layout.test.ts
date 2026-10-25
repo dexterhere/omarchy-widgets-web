@@ -157,7 +157,7 @@ describe('build integration', () => {
     const hostile = layoutJson({ root: { type: 'text', text: '<script>alert(1)</script>' } });
     expect((await run(widgetJson(), hostile)).errors.join()).toMatch(/HTML|plain/);
   });
-  it('code widgets get no layout and fetch no layout.json', async () => {
+  it('code widgets get no layout; layout.json is fetched only to be hashed', async () => {
     const m = mockFetch({
       'manifest.json': manifestJson(),
       'widget.json': codeWidgetJson()
@@ -171,6 +171,11 @@ describe('build integration', () => {
     });
     expect(r.errors).toEqual([]);
     expect(r.widgets[0].layout).toBeNull();
-    expect(m.calls.some((c) => c.endsWith('layout.json'))).toBe(false);
+    // `ow install` fetches and checks all three files, so the index must hash all three.
+    expect(Object.keys(r.widgets[0].sha256 ?? {}).sort()).toEqual([
+      'layout.json',
+      'manifest.json',
+      'widget.json'
+    ]);
   });
 });

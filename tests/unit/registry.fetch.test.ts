@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { assertAllowedUrl, fetchJson, type FetchFn } from '../../scripts/build-registry';
+import { createHash } from 'node:crypto';
+import {
+  assertAllowedUrl,
+  fetchJson,
+  fetchJsonHashed,
+  type FetchFn
+} from '../../scripts/build-registry';
 import { COMMIT, json } from './registry.helpers';
 
 const good = `https://raw.githubusercontent.com/someone/demo/${COMMIT}/widget.json`;
@@ -92,5 +98,16 @@ describe('fetchJson', () => {
     const body = new ReadableStream<Uint8Array>({ pull: () => new Promise(() => {}) });
     const f: FetchFn = async () => new Response(body);
     await expect(fetchJson(good, { fetch: f, timeoutMs: 30 })).rejects.toThrow(/timeout/);
+  });
+});
+
+describe('fetchJsonHashed', () => {
+  it('hashes the exact bytes it parsed, not a re-serialisation', async () => {
+    const raw = '{ "b": 1,\n  "a": 2 }\n';
+    const f: FetchFn = async () =>
+      new Response(raw, { headers: { 'content-type': 'application/json' } });
+    const r = await fetchJsonHashed(good, { fetch: f });
+    expect(r.json).toEqual({ a: 2, b: 1 });
+    expect(r.sha256).toBe(createHash('sha256').update(raw).digest('hex'));
   });
 });

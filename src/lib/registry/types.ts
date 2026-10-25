@@ -77,6 +77,8 @@ export interface RegistryWidget {
   license: string;
   repo: string;
   commit: string;
+  /** sha256 (hex) of manifest.json, widget.json and layout.json at `commit`, as the registry build read them. Absent for fixtures. */
+  sha256?: Record<string, string>;
   /** Committer date (yyyy-mm-dd, UTC) of the pinned commit; null when it could not be read. */
   updated: string | null;
   /** Primary category: the first entry of `categories`. */
